@@ -1,5 +1,5 @@
 /**
- * Heart Tree Animation - Final Layout
+ * Heart Tree Animation - Optimized for Performance
  */
 
 const CONFIG = {
@@ -34,6 +34,40 @@ const Easing = {
         return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     }
 };
+
+// --- Optimization: Sprite Cache ---
+const leafSprites = {}; // Map color -> ImageBitmap/Canvas
+
+function preRenderLeaves() {
+    const size = 64; // Max size for sprite
+    CONFIG.colors.leaves.forEach(color => {
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = size;
+        offCanvas.height = size;
+        const oCtx = offCanvas.getContext('2d');
+
+        // Center
+        oCtx.translate(size / 2, size / 2);
+
+        // Shadow (Baked in!)
+        oCtx.shadowColor = "rgba(0,0,0,0.3)";
+        oCtx.shadowBlur = 5;
+        oCtx.shadowOffsetX = 2;
+        oCtx.shadowOffsetY = 2;
+
+        oCtx.fillStyle = color;
+
+        const s = 28 / 30; // Scale base size fit
+
+        oCtx.beginPath();
+        oCtx.moveTo(0, -10 * s);
+        oCtx.bezierCurveTo(-15 * s, -25 * s, -35 * s, -5 * s, 0, 15 * s);
+        oCtx.bezierCurveTo(35 * s, -5 * s, 15 * s, -25 * s, 0, -10 * s);
+        oCtx.fill();
+
+        leafSprites[color] = offCanvas;
+    });
+}
 
 // --- Classes ---
 
@@ -74,12 +108,14 @@ class Trunk {
         this.ctx.closePath();
         this.ctx.fill();
 
-        // Gradient
-        const grad = this.ctx.createLinearGradient(this.x - 30, this.y, this.x + 30, this.y);
-        grad.addColorStop(0, "rgba(0,0,0,0.1)");
-        grad.addColorStop(0.5, "rgba(0,0,0,0)");
-        grad.addColorStop(1, "rgba(0,0,0,0.1)");
-        this.ctx.fillStyle = grad;
+        // Gradient (Optimized: Draw transparent rect over it instead of complex gradient if possible, but Linear is okay)
+        this.ctx.fillStyle = "rgba(0,0,0,0.1)";
+        // Simple shade on right side
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.x, this.y);
+        this.ctx.lineTo(this.x + this.baseWidth / 2, this.y);
+        this.ctx.lineTo(this.x + curTopW / 2, this.y - this.currentHeight);
+        this.ctx.lineTo(this.x, this.y - this.currentHeight);
         this.ctx.fill();
     }
 
@@ -132,7 +168,13 @@ class Leaf {
         this.color = color;
         this.startTime = startTime;
 
-        this.baseSize = 28 + (Math.random() - 0.5) * 14;
+        this.sprite = leafSprites[color]; // Use cached sprite
+
+        // Size multiplier (Base sprite is 64x64, approx 28px visual)
+        // We want 28px + random variation
+        const targetSize = 28 + (Math.random() - 0.5) * 14;
+        this.scaleMult = targetSize / 28; // Relative to drawn size in sprite
+
         this.rotation = -90 * (Math.PI / 180);
         this.targetRotation = (Math.random() * 60 - 30) * (Math.PI / 180);
 
@@ -146,7 +188,7 @@ class Leaf {
         let t = Math.min((time - this.startTime) / this.duration, 1);
         let ease = Easing.easeOutBack(t);
 
-        this.scale = ease;
+        this.scale = ease * this.scaleMult;
         this.opacity = Math.min(t * 3, 1);
 
         const startRot = -90 * (Math.PI / 180);
@@ -155,25 +197,16 @@ class Leaf {
 
     draw() {
         if (this.scale <= 0) return;
+
         this.ctx.save();
         this.ctx.translate(this.x, this.y);
         this.ctx.rotate(this.currentRotation);
         this.ctx.scale(this.scale, this.scale);
-
         this.ctx.globalAlpha = this.opacity;
-        this.ctx.fillStyle = this.color;
 
-        this.ctx.shadowColor = "rgba(0,0,0,0.3)";
-        this.ctx.shadowBlur = 5;
-        this.ctx.shadowOffsetX = 2;
-        this.ctx.shadowOffsetY = 2;
-
-        const s = this.baseSize / 30;
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, -10 * s);
-        this.ctx.bezierCurveTo(-15 * s, -25 * s, -35 * s, -5 * s, 0, 15 * s);
-        this.ctx.bezierCurveTo(35 * s, -5 * s, 15 * s, -25 * s, 0, -10 * s);
-        this.ctx.fill();
+        // Optimized: Draw Image instead of paths!
+        // Offset -32, -32 because sprite center is 32,32
+        this.ctx.drawImage(this.sprite, -32, -32);
 
         this.ctx.restore();
     }
@@ -202,17 +235,19 @@ class Particle {
     draw() {
         if (this.life <= 0) return;
         this.ctx.globalAlpha = this.life * 0.6;
-        this.ctx.shadowBlur = 10;
-        this.ctx.shadowColor = this.color;
+        // Optimized: Removed shadowBlur from particles (too expensive for small dots)
+        // Or keep very minimal
+        // this.ctx.shadowBlur = 5; 
         this.ctx.fillStyle = this.color;
         this.ctx.beginPath();
         this.ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.globalAlpha = 1.0;
-        this.ctx.shadowBlur = 0;
+        // this.ctx.shadowBlur = 0;
     }
 }
 
+// Reuse TextTyper (it was fine)
 class TextTyper {
     constructor(ctx, messages, startTime) {
         this.ctx = ctx;
@@ -220,7 +255,6 @@ class TextTyper {
         this.startTime = startTime;
         this.lines = [];
 
-        // Position Left side (approx 25-30% of width)
         const startX = CONFIG.resolution.width * 0.25;
         const startY = 320;
         const lineHeight = 75;
@@ -231,8 +265,7 @@ class TextTyper {
         this.messages.forEach((msg, index) => {
             const subLines = msg.split('\n');
             subLines.forEach(subLine => {
-                const duration = subLine.length * 0.04 + 0.3; // Faster typing
-
+                const duration = subLine.length * 0.04 + 0.3;
                 this.lines.push({
                     text: subLine,
                     x: startX,
@@ -240,13 +273,11 @@ class TextTyper {
                     startT: accumulatedTime,
                     duration: duration
                 });
-
                 currentY += lineHeight;
                 accumulatedTime += duration + 0.2;
             });
             currentY += 25;
         });
-
         this.maxTime = accumulatedTime + 5;
     }
 
@@ -255,7 +286,7 @@ class TextTyper {
 
         this.ctx.save();
         this.ctx.font = "500 45px 'Outfit', sans-serif";
-        this.ctx.textAlign = "left"; // Align left
+        this.ctx.textAlign = "left";
 
         this.lines.forEach(line => {
             if (time >= line.startT) {
@@ -274,7 +305,7 @@ class TextTyper {
                     this.ctx.fillStyle = "#FFFFFF";
                 }
 
-                this.ctx.fillText(textToShow, line.x - 200, line.y); // Shift left a bit more to fit
+                this.ctx.fillText(textToShow, line.x - 200, line.y);
             }
         });
         this.ctx.restore();
@@ -283,7 +314,9 @@ class TextTyper {
 
 // --- Main ---
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency in main canvas if possible, but we might need it? 
+// Actually alpha: false is a good optimization if we always clear with opaque color.
+// We do fillRect black.
 
 canvas.width = CONFIG.resolution.width;
 canvas.height = CONFIG.resolution.height;
@@ -300,7 +333,9 @@ let textTyper;
 function initScene() {
     currentTime = 0;
 
-    // Tree starts in Center
+    // Pre-render leaf sprites
+    preRenderLeaves();
+
     trunk = new Trunk(ctx, canvas.width / 2, canvas.height);
     const top = trunk.getTopPosition();
 
@@ -311,12 +346,10 @@ function initScene() {
     addBranch(top.x, top.y, -Math.PI / 2 + 0.6, 144, 24, 0.5);
     addBranch(top.x, top.y, -Math.PI / 2, 108, 24, 0.6);
 
-    // Heart center
     leaves = generateLeaves(top.x, top.y - 200);
 
     particles = [];
 
-    // Text starts after swipe
     const textStartTime = CONFIG.treeDuration + CONFIG.swipeDuration;
     textTyper = new TextTyper(ctx, CONFIG.messages, textStartTime);
 }
@@ -341,6 +374,7 @@ function generateLeaves(cx, cy) {
             let x_check = nx * 1.1;
             let y_check = ny;
 
+            // Optimization: Cheaper math? pow(3) is ok.
             let eq = Math.pow(x_check * x_check + y_check * y_check - 1, 3) - (x_check * x_check * Math.pow(y_check, 3));
 
             if (eq <= 0) {
@@ -359,52 +393,47 @@ function generateLeaves(cx, cy) {
 }
 
 function render(time) {
-    // 1. Calculate Swipe Offset (To the RIGHT)
-    // Canvas Width = 1920
-    // Center = 960
-    // Target = 960 + 480 (Quarter width) = 1440
     let swipeOffset = 0;
     if (time > CONFIG.treeDuration) {
         let t = Math.min((time - CONFIG.treeDuration) / CONFIG.swipeDuration, 1);
         let ease = Easing.easeInOutQuad(t);
-        // Move Right by 25% of width
         swipeOffset = (CONFIG.resolution.width * 0.25) * ease;
     }
 
-    // Background Black
+    // Clear with opaque black (faster than clearRect + background CSS)
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Tree Phase (Swiped)
     ctx.save();
-    ctx.translate(swipeOffset, 0); // Translate positive X
+    ctx.translate(swipeOffset, 0);
 
     trunk.update(time);
     trunk.draw();
     branches.forEach(b => { b.update(time); b.draw(); });
     leaves.forEach(l => { l.update(time); l.draw(); });
 
-    // Particles attached to tree space? Or global? 
-    // Let's attach them to tree space so they move with it
+    // Particles
     if (time > 1.0) {
-        if (Math.random() < 0.15) {
+        // Reduced spawn rate slightly for performance
+        if (Math.random() < 0.1) {
             particles.push(new Particle(ctx, canvas.width / 2 + (Math.random() - 0.5) * 900, canvas.height / 2 + (Math.random() - 0.5) * 800));
         }
-        particles.forEach((p, index) => {
+        // Optimize loop: reverse loop for splicing?
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
             p.update();
             p.draw();
-            if (p.life <= 0) particles.splice(index, 1);
-        });
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+            }
+        }
     }
 
     ctx.restore();
 
-    // Draw Text Phase
-    // Text does NOT move. Used global coord.
     textTyper.draw(time);
 }
 
-// Auto-play loop
 function loop() {
     if (!isPlaying) return;
 
@@ -423,4 +452,4 @@ function loop() {
 let lastTime = performance.now();
 initScene();
 loop();
-console.log("Layout v2 initialized.");
+console.log("Optimized V3 initialized.");
