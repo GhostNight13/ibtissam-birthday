@@ -1,15 +1,15 @@
 /**
- * Heart Tree Animation - Redesign
- * Interaction: Start -> Falling Heart -> Fractal Tree -> Swipe -> Text
+ * Heart Tree Animation - Refined Redesign
+ * Interaction: Start -> Falling Heart -> Specific Tree Structure -> Swipe -> Text
  */
 
 const CONFIG = {
     resolution: { width: 1920, height: 1080 },
     fps: 60,
-    treeDuration: 12,     // Slightly slower growth for grandeur
+    treeDuration: 10,
     swipeDuration: 3.0,
     colors: {
-        trunk: '#FFB6C1',
+        trunk: '#FFB6C1', // Pink trunk
         leaves: [
             '#EC4899', '#F472B6', '#EF4444', '#FBBF24',
             '#FCD34D', '#F97316', '#FB923C', '#F87171'
@@ -71,17 +71,18 @@ const State = {
 };
 
 let currentState = State.WAITING;
-let stateTime = 0; // Local time for current state
+let stateTime = 0;
 
+// --- Falling Heart Logic ---
 class FallingHeart {
     constructor(ctx, startX, startY) {
         this.ctx = ctx;
         this.x = startX;
         this.y = startY;
         this.vy = 0;
-        this.gravity = 1500; // px/s^2
+        this.gravity = 800; // Reduced gravity for visibility
         this.finished = false;
-        this.size = 60;
+        this.size = 70; // Larger size
     }
 
     update(dt) {
@@ -89,23 +90,25 @@ class FallingHeart {
         this.vy += this.gravity * dt;
         this.y += this.vy * dt;
 
-        // Ground hit
-        if (this.y >= CONFIG.resolution.height - 50) {
-            this.y = CONFIG.resolution.height - 50;
+        // Ground hit logic
+        const groundY = CONFIG.resolution.height - 20;
+        if (this.y >= groundY) {
+            this.y = groundY;
             this.finished = true;
-            // Trigger Growth
             startGrowth(this.x, this.y);
         }
     }
 
     draw() {
-        if (this.finished) return; // Disappears into ground
+        if (this.finished) return;
         this.ctx.save();
         this.ctx.translate(this.x, this.y);
-        this.ctx.scale(this.size / 60, this.size / 60); // Scale 
-        this.ctx.fillStyle = "#EC4899";
+        this.ctx.scale(this.size / 60, this.size / 60);
+        this.ctx.fillStyle = "#FF69B4"; // Bright Hot Pink
+        this.ctx.shadowBlur = 20;
+        this.ctx.shadowColor = "#FF69B4"; // Glow to make it visible
 
-        // Heart Path (Simple)
+        // Heart Path
         this.ctx.beginPath();
         const s = 1.5;
         this.ctx.moveTo(0, -10 * s);
@@ -116,67 +119,33 @@ class FallingHeart {
     }
 }
 
-class FractalBranch {
-    constructor(ctx, startX, startY, angle, length, width, depth, maxDepth, startTime) {
+// --- Specific Tree Structure (Not Random) ---
+// Matches the "Pink Tree" reference: Central trunk, symmetric-ish splits
+class SpecificBranch {
+    constructor(ctx, startX, startY, angle, length, width, startTime, parentDuration) {
         this.ctx = ctx;
         this.startX = startX;
         this.startY = startY;
         this.angle = angle;
-        this.length = length;
+        this.targetLength = length;
         this.width = width;
-        this.depth = depth;
-        this.maxDepth = maxDepth;
         this.startTime = startTime;
-
-        // Growth duration depends on depth (trunk slows, twigs fast)
-        this.duration = 1.2 - (depth * 0.1);
-        if (this.duration < 0.4) this.duration = 0.4;
+        this.duration = parentDuration || 1.5;
 
         this.currentLength = 0;
         this.children = [];
-        this.leafless = (depth < maxDepth - 2); // Only leaves on outer branches
-
-        this.spawnedChildren = false;
     }
 
     update(time) {
         if (time < this.startTime) return;
-
-        const localTime = time - this.startTime;
-        let t = Math.min(localTime / this.duration, 1);
-        this.currentLength = this.length * Easing.easeOutQuad(t);
-
-        // Spawn children when this branch is partially grown
-        if (t > 0.6 && !this.spawnedChildren && this.depth < this.maxDepth) {
-            this.spawnChildren();
-            this.spawnedChildren = true;
-        }
+        let t = Math.min((time - this.startTime) / this.duration, 1);
+        this.currentLength = this.targetLength * Easing.easeOutQuad(t);
 
         this.children.forEach(c => c.update(time));
     }
 
-    spawnChildren() {
-        const endX = this.startX + Math.cos(this.angle) * this.length;
-        const endY = this.startY + Math.sin(this.angle) * this.length;
-
-        // Photo 4 style: Organic splits
-        const count = 2 + Math.floor(Math.random() * 2); // 2 or 3 branches
-        for (let i = 0; i < count; i++) {
-            // Angle variation
-            const angleOffset = (Math.random() - 0.5) * 1.2;
-            const newAngle = this.angle + angleOffset;
-            const newLength = this.length * (0.6 + Math.random() * 0.3); // Shorter
-            const newWidth = this.width * 0.7;
-
-            // Time offset for child
-            const childStart = this.startTime + (this.duration * 0.5);
-
-            this.children.push(new FractalBranch(this.ctx, endX, endY, newAngle, newLength, newWidth, this.depth + 1, this.maxDepth, childStart));
-        }
-    }
-
     draw() {
-        if (this.currentLength <= 0) return;
+        if (this.currentLength <= 0.1) return;
 
         this.ctx.beginPath();
         this.ctx.moveTo(this.startX, this.startY);
@@ -192,17 +161,22 @@ class FractalBranch {
         this.children.forEach(c => c.draw());
     }
 
-    // Collect all end points for leaves
-    getEndPoints(arr) {
-        if (this.children.length === 0 || this.depth > this.maxDepth - 3) {
-            const endX = this.startX + Math.cos(this.angle) * this.currentLength;
-            const endY = this.startY + Math.sin(this.angle) * this.currentLength;
-            arr.push({ x: endX, y: endY });
-        }
-        this.children.forEach(c => c.getEndPoints(arr));
+    addChild(angleOffset, lengthFactor, widthFactor, delayFactor) {
+        // Calculate start position for child based on FULL length of parent
+        // (Simplified: children grow from end of parent)
+        const endX = this.startX + Math.cos(this.angle) * this.targetLength;
+        const endY = this.startY + Math.sin(this.angle) * this.targetLength;
+
+        const newAngle = this.angle + angleOffset;
+        const newLength = this.targetLength * lengthFactor;
+        const newWidth = this.width * widthFactor;
+        const newStartTime = this.startTime + (this.duration * delayFactor); // Start when parent is partially done
+
+        const child = new SpecificBranch(this.ctx, endX, endY, newAngle, newLength, newWidth, newStartTime, this.duration * 0.8);
+        this.children.push(child);
+        return child;
     }
 }
-
 
 class Leaf {
     constructor(ctx, x, y, color, startTime) {
@@ -213,7 +187,8 @@ class Leaf {
         this.startTime = startTime;
         this.sprite = leafSprites[color];
 
-        const targetSize = 28 + (Math.random() - 0.5) * 14;
+        // Larger leaves to fill the heart shape better
+        const targetSize = 32 + (Math.random() - 0.5) * 16;
         this.scaleMult = targetSize / 28;
 
         this.rotation = -90 * (Math.PI / 180);
@@ -313,32 +288,29 @@ canvas.width = CONFIG.resolution.width;
 canvas.height = CONFIG.resolution.height;
 
 let fallingHeart = null;
-let rootBranch = null;
+let rootBranch = null; // Should include children
+let treeBranches = []; // Flat list for easier update if needed, or just root
 let leaves = [];
 let textTyper = null;
 let lastTime = 0;
 
 function init() {
     preRenderLeaves();
-
-    // Listen for start interaction
     document.getElementById('heart-trigger').addEventListener('click', onStartClick);
 }
 
 function onStartClick() {
-    // Hide UI
     document.getElementById('start-screen').style.opacity = '0';
     setTimeout(() => {
         document.getElementById('start-screen').style.display = 'none';
         document.getElementById('canvas-container').style.opacity = '1';
     }, 500);
 
-    // Start Canvas Animation
     currentState = State.FALLING;
     stateTime = 0;
     lastTime = performance.now();
 
-    // Initialize Falling Heart (Center of screen initially)
+    // Start falling from where the user clicked (Center)
     fallingHeart = new FallingHeart(ctx, canvas.width / 2, canvas.height / 2);
 
     loop();
@@ -348,37 +320,64 @@ function startGrowth(x, y) {
     currentState = State.GROWING;
     stateTime = 0;
 
-    // Fractal Tree: Start Branch (Trunk)
-    // -90 deg is UP
-    rootBranch = new FractalBranch(ctx, x, y, -Math.PI / 2, 160, 45, 0, 7, 0);
+    // --- Build Specific Tree Structure (Photo 2 style) ---
+    // Single strong trunk, few major splits
+    treeBranches = [];
 
-    // Generate Leaves (Heart Shape)
-    // We pre-calculate positions but only show them after some time
-    leaves = generateHeartLeaves(x, y - 500); // 500px up is approx visual center of tree
+    // Trunk
+    const trunk = new SpecificBranch(ctx, x, y, -Math.PI / 2, 280, 50, 0, 1.5);
+    treeBranches.push(trunk);
 
-    // Text starts later
+    // Level 1 Branches (The "V" shape)
+    // Left Main
+    const leftMain = trunk.addChild(-0.5, 0.7, 0.7, 0.6);
+    // Right Main
+    const rightMain = trunk.addChild(0.5, 0.7, 0.7, 0.6);
+    // Center small
+    const centerMain = trunk.addChild(0, 0.5, 0.6, 0.7);
+
+    // Level 2 (Splits from Level 1)
+    leftMain.addChild(-0.4, 0.7, 0.6, 0.6);
+    leftMain.addChild(0.3, 0.6, 0.6, 0.6);
+
+    rightMain.addChild(0.4, 0.7, 0.6, 0.6);
+    rightMain.addChild(-0.3, 0.6, 0.6, 0.6);
+
+    centerMain.addChild(-0.2, 0.7, 0.6, 0.6);
+    centerMain.addChild(0.2, 0.7, 0.6, 0.6);
+
+
+    // Leaves (Full Heart Shape - Photo 1)
+    // Centered around the top of the trunk
+    leaves = generateHeartLeaves(x, y - 550);
+
+    // Text
     const textStart = CONFIG.treeDuration + CONFIG.swipeDuration;
     textTyper = new TextTyper(ctx, CONFIG.messages, textStart);
 }
 
 function generateHeartLeaves(cx, cy) {
     const arr = [];
-    const count = 900;
+    // High density to ensure "Full Tree" look
+    const count = 1000;
 
     for (let i = 0; i < count; i++) {
         let valid = false, lx, ly;
         let attempts = 0;
         while (!valid && attempts < 200) {
             attempts++;
-            let rx = (Math.random() - 0.5) * 950;
-            let ry = (Math.random() - 0.5) * 950;
-            let scale = 320;
+            let rx = (Math.random() - 0.5) * 1050; // Wide
+            let ry = (Math.random() - 0.5) * 1050;
+
+            let scale = 360; // Big Heart
             let nx = rx / scale;
             let ny = -ry / scale;
-            ny += 0.3;
+            ny += 0.3; // Shift heart shape relative to center
+
             let x_check = nx * 1.1;
             let y_check = ny;
             let eq = Math.pow(x_check * x_check + y_check * y_check - 1, 3) - (x_check * x_check * Math.pow(y_check, 3));
+
             if (eq <= 0) {
                 valid = true;
                 lx = cx + rx;
@@ -387,7 +386,7 @@ function generateHeartLeaves(cx, cy) {
         }
         if (valid) {
             const color = CONFIG.colors.leaves[Math.floor(Math.random() * CONFIG.colors.leaves.length)];
-            const t = 3.0 + Math.random() * 6.0; // Leaves appear gradually from 3s to 9s
+            const t = 2.0 + Math.random() * 5.0; // Fast pop in
             arr.push(new Leaf(ctx, lx, ly, color, t));
         }
     }
@@ -396,13 +395,10 @@ function generateHeartLeaves(cx, cy) {
 
 
 function render(dt) {
-    // Clear
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     stateTime += dt;
 
-    // --- State Logic ---
     if (currentState === State.FALLING) {
         if (fallingHeart) {
             fallingHeart.update(dt);
@@ -411,7 +407,6 @@ function render(dt) {
     }
 
     if (currentState === State.GROWING) {
-        // Calculate Swipe
         let totalTime = stateTime;
 
         let swipeOffset = 0;
@@ -424,10 +419,12 @@ function render(dt) {
         ctx.save();
         ctx.translate(swipeOffset, 0);
 
-        if (rootBranch) {
-            rootBranch.update(stateTime);
-            rootBranch.draw();
-        }
+        // Draw Tree (Specific Structure)
+        // Just drawing the root trunk will draw children recursively
+        treeBranches.forEach(b => {
+            b.update(stateTime);
+            b.draw();
+        });
 
         leaves.forEach(l => {
             l.update(stateTime);
@@ -436,7 +433,6 @@ function render(dt) {
 
         ctx.restore();
 
-        // Text (No swipe transform)
         if (textTyper) {
             textTyper.draw(stateTime);
         }
@@ -448,11 +444,9 @@ function loop() {
     let dt = (now - lastTime) / 1000;
     lastTime = now;
     if (dt > 0.1) dt = 0.1;
-
     render(dt);
     requestAnimationFrame(loop);
 }
 
-// Start
 init();
-console.log("Redesign Interactive V1 Ready.");
+console.log("Refined Redesign V2 (Visible Heart + Simple Tree) Ready.");
