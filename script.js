@@ -274,7 +274,7 @@ class TextTyper {
                     this.ctx.font = "500 45px 'Outfit', sans-serif";
                     this.ctx.fillStyle = "#FFFFFF";
                 }
-                this.ctx.fillText(textToShow, line.x - 200, line.y);
+                this.ctx.fillText(textToShow, line.x, line.y);
             }
         });
         this.ctx.restore();
@@ -324,8 +324,8 @@ function startGrowth(x, y) {
     // Single strong trunk, few major splits
     treeBranches = [];
 
-    // Trunk
-    const trunk = new SpecificBranch(ctx, x, y, -Math.PI / 2, 280, 50, 0, 1.5);
+    // Trunk - MUCH LONGER to match reference photos
+    const trunk = new SpecificBranch(ctx, x, y, -Math.PI / 2, 480, 50, 0, 1.5);
     treeBranches.push(trunk);
 
     // Level 1 Branches (The "V" shape)
