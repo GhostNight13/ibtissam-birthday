@@ -230,7 +230,7 @@ class TextTyper {
         this.startTime = startTime;
         this.lines = [];
 
-        const startX = CONFIG.resolution.width * 0.25;
+        const startX = CONFIG.resolution.width * 0.15; // Further left to avoid tree
         const startY = 320;
         const lineHeight = 75;
         let currentY = startY;
@@ -348,8 +348,8 @@ function startGrowth(x, y) {
 
 
     // Leaves (Full Heart Shape - Photo 1)
-    // Centered around the top of the trunk
-    leaves = generateHeartLeaves(x, y - 550);
+    // Centered around the top of the trunk (adjusted for longer trunk)
+    leaves = generateHeartLeaves(x, y - 700);
 
     // Text
     const textStart = CONFIG.treeDuration + CONFIG.swipeDuration;
